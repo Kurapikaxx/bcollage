@@ -313,6 +313,41 @@
   .x-btn{width:34px;height:34px;border-radius:10px; display:grid;place-items:center; background:rgba(255,255,255,.05);}
   .x-btn svg{width:16px;height:16px;stroke:var(--mut);}
 
+  /* export-individually option */
+  .opt-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:13px 14px; margin-bottom:14px; border-radius:14px;
+    background:rgba(255,255,255,.04); border:1px solid var(--line);
+  }
+  .opt-row .opt-title{font-size:.9rem; font-weight:700; letter-spacing:-.01em;}
+  .opt-row .opt-sub{font-size:.74rem; color:var(--mut); margin-top:2px; line-height:1.3;}
+
+  /* individual photos grid */
+  .singles{margin-bottom:14px;}
+  .singles-head{
+    font-size:.66rem; text-transform:uppercase; letter-spacing:.16em; color:var(--mut2);
+    font-weight:700; margin-bottom:9px;
+  }
+  .singles-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:7px;}
+  .single{
+    position:relative; aspect-ratio:1; border-radius:11px; overflow:hidden;
+    border:1px solid var(--line); background:#000; text-decoration:none;
+    display:block; transition:transform .1s ease;
+  }
+  .single:active{transform:scale(.94);}
+  .single img{width:100%;height:100%;object-fit:cover; display:block;}
+  .single .dl{
+    position:absolute; right:4px; bottom:4px; width:22px; height:22px; border-radius:7px;
+    background:rgba(0,0,0,.6); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+    display:grid; place-items:center;
+  }
+  .single .dl svg{width:12px;height:12px;stroke:#fff;}
+  .single .num{
+    position:absolute; left:4px; top:4px; min-width:18px; height:18px; padding:0 5px;
+    border-radius:6px; background:rgba(0,0,0,.6); color:#fff; font-size:.62rem; font-weight:700;
+    display:grid; place-items:center;
+  }
+
   .spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.15); border-top-color:var(--acc-a); animation:spin .8s linear infinite; margin:40px auto;}
   @keyframes spin{to{transform:rotate(360deg)}}
 </style>
@@ -375,8 +410,8 @@
       <div class="panel-title"><span>Adjust</span></div>
       <div class="sliders">
         <div class="srow"><div class="lab"><span>Border</span><span id="borderVal">0</span></div><input type="range" id="borderR" min="0" max="120" step="1" value="0"></div>
-        <div class="srow"><div class="lab"><span>Spacing</span><span id="spacingVal">0</span></div><input type="range" id="spacingR" min="0" max="120" step="1" value="0"></div>
-        <div class="srow"><div class="lab"><span>Corner radius</span><span id="radiusVal">0</span></div><input type="range" id="radiusR" min="0" max="160" step="1" value="0"></div>
+        <div class="srow"><div class="lab"><span>Spacing</span><span id="spacingVal">12</span></div><input type="range" id="spacingR" min="0" max="120" step="1" value="0"></div>
+        <div class="srow"><div class="lab"><span>Corner radius</span><span id="radiusVal">8</span></div><input type="range" id="radiusR" min="0" max="160" step="1" value="0"></div>
         <div class="toggle-row"><div class="lab">Tile shadow</div><div class="switch" id="shadowSw"></div></div>
       </div>
     </div>
@@ -409,7 +444,15 @@
       <button data-q="2" class="sel">High<b>2160px</b></button>
       <button data-q="3">Max<b>3240px</b></button>
     </div>
+    <div class="opt-row" id="eachRow">
+      <div>
+        <div class="opt-title">Export photos individually</div>
+        <div class="opt-sub">Also save each photo as its own image, plus the collage</div>
+      </div>
+      <div class="switch" id="eachSw"></div>
+    </div>
     <div class="preview" id="previewBox"><div class="spinner"></div></div>
+    <div class="singles" id="singlesWrap" style="display:none"></div>
     <div class="m-actions" id="mActions"></div>
     <p class="savehint" id="saveHint"></p>
   </div>
@@ -430,6 +473,34 @@ const RATIOS = [
 ];
 
 const t3 = 1/3, t2 = 1/2, q = 1/4;
+
+/* Orthodontic composite: 4:3 frame, 3x3 grid of 4:3 thirds.
+   5 cross cells = intraoral (4:3, fill cell). 4 corners = extraoral (3:4,
+   full cell-height, pinned to the outer corner -> intentional inner gaps).
+   Computed from live area px so photos stay exactly 4:3 / 3:4 on any canvas. */
+function orthoRects(aw, ah){
+  const CA = 4/3;                       // composite aspect
+  let cw = aw, ch = aw/CA;
+  if(ch > ah){ ch = ah; cw = ah*CA; }   // largest 4:3 box that fits, centered
+  const ox=(aw-cw)/2, oy=(ah-ch)/2;
+  const tw=cw/3, th=ch/3;               // each third (4:3)
+  const ew=th*0.75;                     // extraoral width (3:4 at cell height)
+  const L=ox, Cx=ox+tw, Rx=ox+2*tw, Redge=ox+cw-ew;
+  const T=oy, My=oy+th, By=oy+2*th;
+  const px=[
+    [L,     T,  ew, th],   // 0 top-left  extraoral
+    [Cx,    T,  tw, th],   // 1 top-center intraoral
+    [Redge, T,  ew, th],   // 2 top-right extraoral
+    [L,     My, tw, th],   // 3 mid-left  intraoral
+    [Cx,    My, tw, th],   // 4 center    intraoral
+    [Rx,    My, tw, th],   // 5 mid-right intraoral
+    [L,     By, ew, th],   // 6 bot-left  extraoral
+    [Cx,    By, tw, th],   // 7 bot-center intraoral
+    [Redge, By, ew, th],   // 8 bot-right extraoral
+  ];
+  return px.map(([x,y,w,h])=>[x/aw, y/ah, w/aw, h/ah]);
+}
+
 const LAYOUTS = [
   {key:'1',     n:1, cells:[[0,0,1,1]]},
   {key:'2v',    n:2, cells:[[0,0,t2,1],[t2,0,t2,1]]},
@@ -446,6 +517,7 @@ const LAYOUTS = [
   {key:'5mix',  n:5, cells:[[0,0,t2,t2],[t2,0,t2,t2],[0,t2,t3,t2],[t3,t2,t3,t2],[2*t3,t2,t3,t2]]},
   {key:'6grid', n:6, cells:[[0,0,t3,t2],[t3,0,t3,t2],[2*t3,0,t3,t2],[0,t2,t3,t2],[t3,t2,t3,t2],[2*t3,t2,t3,t2]]},
   {key:'9grid', n:9, cells:(()=>{const a=[];for(let r=0;r<3;r++)for(let c=0;c<3;c++)a.push([c*t3,r*t3,t3,t3]);return a;})()},
+  {key:'ortho', n:9, ortho:true, ratioKey:'4:3', cells:orthoRects(4,3)},
 ];
 
 const SWATCHES = ['#FFFFFF','#000000','#11131A','#F4EFE6','#E7E1D6','#0E2A3A','#1C2B22','#F7D9D9','#E9D7F2','#C7E3E1','#FFB35C','#FF6B81'];
@@ -454,12 +526,13 @@ const SWATCHES = ['#FFFFFF','#000000','#11131A','#F4EFE6','#E7E1D6','#0E2A3A','#
 const state = {
   ratio: RATIOS[0],
   layout: LAYOUTS[7],         // 2x2 grid default
-  border: 0, spacing: 12, radius: 8, shadow: false,
+  border: 0, spacing: 0, radius: 0, shadow: false,
   bg: '#FFFFFF',
   pool: [],                    // {url,img,w,h}
   cells: [],                   // {photo|null}; photo = {poolIndex,scale,tx,ty,rot,flipH}
   selected: -1,
   exportQ: 2,
+  exportEach: false,
 };
 let hintShown = false;
 
@@ -518,11 +591,12 @@ function layoutGeometry(){
   const scale = sz.w / state.ratio.w; // display px per base px
   geom = {sz, scale};
   const b = state.border * scale;
-  const sp = state.spacing * scale;
+  const sp = state.layout.ortho ? 0 : state.spacing * scale;
   const rad = state.radius * scale;
   const area = {x:b, y:b, w:sz.w - 2*b, h:sz.h - 2*b};
 
-  state.layout.cells.forEach((rect, i)=>{
+  const rects = state.layout.ortho ? orthoRects(area.w, area.h) : state.layout.cells;
+  rects.forEach((rect, i)=>{
     let cx = area.x + rect[0]*area.w;
     let cy = area.y + rect[1]*area.h;
     let cw = rect[2]*area.w;
@@ -805,6 +879,11 @@ function renderLayouts(){
       const prev = state.cells;
       state.layout = l;
       state.cells = freshCells(l.n, prev);
+      // ortho composite reads best on its native 4:3 frame
+      if(l.ratioKey){
+        const rt = RATIOS.find(r=>r.key===l.ratioKey);
+        if(rt){ state.ratio = rt; renderSizes(); }
+      }
       // auto-fill from any pooled images already used or available
       buildStage();
       deselect();
@@ -882,13 +961,18 @@ stageArea.addEventListener('pointerdown', e=>{ if(e.target===stageArea || e.targ
 
 /* ============================== EXPORT ============================== */
 const modal = $('#modal');
-$('#exportBtn').onclick = ()=>{ modal.classList.add('show'); doExport(); };
+$('#exportBtn').onclick = ()=>{ $('#eachSw').classList.toggle('on', state.exportEach); modal.classList.add('show'); doExport(); };
 $('#modalClose').onclick = ()=> modal.classList.remove('show');
 modal.addEventListener('click', e=>{ if(e.target===modal) modal.classList.remove('show'); });
 $('#qualRow').addEventListener('click', e=>{
   const b=e.target.closest('button'); if(!b) return;
   state.exportQ = parseInt(b.dataset.q);
   document.querySelectorAll('#qualRow button').forEach(x=>x.classList.toggle('sel', x===b));
+  doExport();
+});
+$('#eachSw').addEventListener('click', e=>{
+  state.exportEach = !state.exportEach;
+  e.currentTarget.classList.toggle('on', state.exportEach);
   doExport();
 });
 
@@ -899,15 +983,28 @@ function roundRectPath(c,x,y,w,h,r){
   c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath();
 }
 
-async function doExport(){
-  const box = $('#previewBox'); box.innerHTML='<div class="spinner"></div>';
-  $('#mActions').innerHTML=''; $('#saveHint').textContent='';
-  await new Promise(r=>setTimeout(r,30));
+function canvasToBlob(cv){ return new Promise(res=> cv.toBlob(res, 'image/png')); }
 
-  const mult = state.exportQ;                 // 1080 base short side already; mult x
+/* paint a single photo (with its crop/zoom/rotate/flip) into a target rect */
+function paintPhoto(c, cell, x, y, cw, ch){
+  if(!cell.photo) return;
+  const p = cell.photo; const pool = state.pool[p.poolIndex];
+  const cover = Math.max(cw/pool.w, ch/pool.h);
+  const bw = pool.w*cover, bh = pool.h*cover;
+  c.save();
+  c.translate(x + cw/2 + p.tx*cw, y + ch/2 + p.ty*ch);
+  c.rotate(p.rot*Math.PI/180);
+  c.scale(p.scale*(p.flipH?-1:1), p.scale);
+  c.drawImage(pool.img, -bw/2, -bh/2, bw, bh);
+  c.restore();
+}
+
+/* render the full collage; returns canvas, dims (per-cell pixel rects), W, H */
+function renderCollage(){
+  const mult = state.exportQ;
   const baseShort = Math.min(state.ratio.w, state.ratio.h);
   const targetShort = 1080 * mult;
-  const f = targetShort / baseShort;          // scale base->export
+  const f = targetShort / baseShort;
   const W = Math.round(state.ratio.w * f), H = Math.round(state.ratio.h * f);
 
   const cv = document.createElement('canvas');
@@ -916,15 +1013,18 @@ async function doExport(){
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality='high';
   c.fillStyle = state.bg; c.fillRect(0,0,W,H);
 
-  const scale = f;                            // base px -> export px
-  const b = state.border*scale, sp = state.spacing*scale, rad = state.radius*scale;
+  const scale = f;
+  const b = state.border*scale, sp = state.layout.ortho ? 0 : state.spacing*scale, rad = state.radius*scale;
   const area = {x:b,y:b,w:W-2*b,h:H-2*b};
+  const dims = [];
 
-  state.layout.cells.forEach((rect,i)=>{
+  const rects = state.layout.ortho ? orthoRects(area.w, area.h) : state.layout.cells;
+  rects.forEach((rect,i)=>{
     let cx=area.x+rect[0]*area.w, cy=area.y+rect[1]*area.h;
     let cw=rect[2]*area.w, ch=rect[3]*area.h;
     cx+=sp/2; cy+=sp/2; cw-=sp; ch-=sp;
     cw=Math.max(1,cw); ch=Math.max(1,ch);
+    dims[i] = {cw, ch};
     const cell = state.cells[i];
     c.save();
     if(state.shadow && cell.photo){
@@ -932,36 +1032,93 @@ async function doExport(){
       roundRectPath(c,cx,cy,cw,ch,rad); c.fillStyle=state.bg; c.fill(); c.restore();
     }
     roundRectPath(c,cx,cy,cw,ch,rad); c.clip();
-    if(cell.photo){
-      const p=cell.photo; const pool=state.pool[p.poolIndex];
-      const cover=Math.max(cw/pool.w, ch/pool.h);
-      const bw=pool.w*cover, bh=pool.h*cover;
-      c.translate(cx+cw/2 + p.tx*cw, cy+ch/2 + p.ty*ch);
-      c.rotate(p.rot*Math.PI/180);
-      c.scale(p.scale*(p.flipH?-1:1), p.scale);
-      c.drawImage(pool.img, -bw/2, -bh/2, bw, bh);
-    }
+    paintPhoto(c, cell, cx, cy, cw, ch);
     c.restore();
   });
 
-  cv.toBlob((blob)=>{
-    const url = URL.createObjectURL(blob);
-    box.innerHTML = `<img src="${url}" alt="collage preview">`;
-    const acts = $('#mActions');
-    acts.innerHTML='';
-    // Share (best on iOS -> Save to Photos)
-    const file = new File([blob], 'B-Collage.png', {type:'image/png'});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      const sh=document.createElement('button'); sh.className='m-primary';
-      sh.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg> Save / Share';
-      sh.onclick=async()=>{ try{ await navigator.share({files:[file], title:'B Collage'}); }catch(e){} };
-      acts.appendChild(sh);
+  return {cv, dims, W, H};
+}
+
+/* render a single cell's photo (full-bleed rectangle, no spacing/radius) */
+function renderSingle(i, cw, ch){
+  cw = Math.max(1, Math.round(cw)); ch = Math.max(1, Math.round(ch));
+  const cv = document.createElement('canvas');
+  cv.width=cw; cv.height=ch;
+  const c = cv.getContext('2d');
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality='high';
+  c.fillStyle = state.bg; c.fillRect(0,0,cw,ch);
+  paintPhoto(c, state.cells[i], 0, 0, cw, ch);
+  return cv;
+}
+
+let exportURLs = [];
+function freeExportURLs(){ exportURLs.forEach(u=>URL.revokeObjectURL(u)); exportURLs=[]; }
+
+async function doExport(){
+  const box = $('#previewBox'); box.innerHTML='<div class="spinner"></div>';
+  $('#mActions').innerHTML=''; $('#saveHint').textContent='';
+  const singles = $('#singlesWrap'); singles.innerHTML=''; singles.style.display='none';
+  freeExportURLs();
+  await new Promise(r=>setTimeout(r,30));
+
+  // ---- collage ----
+  const {cv, dims, W, H} = renderCollage();
+  const collageBlob = await canvasToBlob(cv);
+  const collageURL = URL.createObjectURL(collageBlob); exportURLs.push(collageURL);
+  box.innerHTML = `<img src="${collageURL}" alt="collage preview">`;
+
+  const shareFiles = [ new File([collageBlob], 'B-Collage.png', {type:'image/png'}) ];
+
+  // ---- individual photos ----
+  let photoCount = 0;
+  if(state.exportEach){
+    const grid = document.createElement('div'); grid.className='singles-grid';
+    let n = 0;
+    for(let i=0;i<state.cells.length;i++){
+      if(!state.cells[i].photo) continue;
+      n++;
+      const d = dims[i] || {cw:1080, ch:1080};
+      const scv = renderSingle(i, d.cw, d.ch);
+      const blob = await canvasToBlob(scv);
+      const url = URL.createObjectURL(blob); exportURLs.push(url);
+      const name = `B-Photo-${n}.png`;
+      shareFiles.push(new File([blob], name, {type:'image/png'}));
+
+      const a = document.createElement('a');
+      a.className='single'; a.href=url; a.download=name;
+      a.innerHTML = `<img src="${url}" alt="${name}">`+
+        `<span class="num">${n}</span>`+
+        `<span class="dl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 9l4 4 4-4M5 21h14"/></svg></span>`;
+      grid.appendChild(a);
     }
-    const a=document.createElement('a'); a.className= (acts.children.length? 'm-secondary':'m-primary'); a.href=url; a.download='B-Collage.png';
-    a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 9l4 4 4-4M5 21h14"/></svg> Download PNG';
-    acts.appendChild(a);
+    photoCount = n;
+    if(n){
+      singles.style.display='block';
+      const head = document.createElement('div'); head.className='singles-head';
+      head.textContent = `Individual photos · ${n}`;
+      singles.appendChild(head); singles.appendChild(grid);
+    }
+  }
+
+  // ---- actions ----
+  const acts = $('#mActions');
+  const canShareAll = navigator.canShare && navigator.canShare({files:shareFiles});
+  if(canShareAll){
+    const sh=document.createElement('button'); sh.className='m-primary';
+    const lbl = (state.exportEach && photoCount) ? `Save / Share all (${shareFiles.length})` : 'Save / Share';
+    sh.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg> '+lbl;
+    sh.onclick=async()=>{ try{ await navigator.share({files:shareFiles, title:'B Collage'}); }catch(e){} };
+    acts.appendChild(sh);
+  }
+  const a=document.createElement('a'); a.className= (acts.children.length? 'm-secondary':'m-primary'); a.href=collageURL; a.download='B-Collage.png';
+  a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 9l4 4 4-4M5 21h14"/></svg> Download collage';
+  acts.appendChild(a);
+
+  if(state.exportEach && photoCount){
+    $('#saveHint').innerHTML = `Collage <b>${W}×${H}px</b> + <b>${photoCount}</b> individual photo${photoCount>1?'s':''}. On iPhone: tap <b>Save / Share → Save ${shareFiles.length} Images</b>, or tap any thumbnail to save it on its own.`;
+  } else {
     $('#saveHint').innerHTML = `Exported at <b>${W}×${H}px</b>. On iPhone: tap <b>Save / Share → Save Image</b>, or long-press the preview above.`;
-  }, 'image/png');
+  }
 }
 
 /* ============================== INIT ============================== */
