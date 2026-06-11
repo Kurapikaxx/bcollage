@@ -1054,6 +1054,19 @@ function renderSingle(i, cw, ch){
 let exportURLs = [];
 function freeExportURLs(){ exportURLs.forEach(u=>URL.revokeObjectURL(u)); exportURLs=[]; }
 
+function triggerDownload(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),8000);
+}
+async function downloadAll(items){     // items: [{blob, name}], downloaded one by one
+  for(const it of items){
+    triggerDownload(it.blob, it.name);
+    await new Promise(r=>setTimeout(r,350));   // small gap so browsers don't drop files
+  }
+}
+
 async function doExport(){
   const box = $('#previewBox'); box.innerHTML='<div class="spinner"></div>';
   $('#mActions').innerHTML=''; $('#saveHint').textContent='';
@@ -1068,6 +1081,8 @@ async function doExport(){
   box.innerHTML = `<img src="${collageURL}" alt="collage preview">`;
 
   const shareFiles = [ new File([collageBlob], 'B-Collage.png', {type:'image/png'}) ];
+  const allItems   = [ {blob:collageBlob, name:'B-Collage.png'} ];   // collage + singles
+  const photoItems = [];                                             // singles only
 
   // ---- individual photos ----
   let photoCount = 0;
@@ -1083,19 +1098,23 @@ async function doExport(){
       const url = URL.createObjectURL(blob); exportURLs.push(url);
       const name = `B-Photo-${n}.png`;
       shareFiles.push(new File([blob], name, {type:'image/png'}));
+      allItems.push({blob, name});
+      photoItems.push({blob, name});
 
       const a = document.createElement('a');
-      a.className='single'; a.href=url; a.download=name;
+      a.className='single'; a.href=url; a.download=name; a.title='Download '+name;
       a.innerHTML = `<img src="${url}" alt="${name}">`+
         `<span class="num">${n}</span>`+
         `<span class="dl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 9l4 4 4-4M5 21h14"/></svg></span>`;
+      // guarantee a download (some desktop browsers ignore the anchor's download attr for blobs)
+      a.onclick = (e)=>{ e.preventDefault(); triggerDownload(blob, name); };
       grid.appendChild(a);
     }
     photoCount = n;
     if(n){
       singles.style.display='block';
       const head = document.createElement('div'); head.className='singles-head';
-      head.textContent = `Individual photos · ${n}`;
+      head.textContent = `Individual photos · ${n} — click any to save`;
       singles.appendChild(head); singles.appendChild(grid);
     }
   }
@@ -1110,16 +1129,33 @@ async function doExport(){
     sh.onclick=async()=>{ try{ await navigator.share({files:shareFiles, title:'B Collage'}); }catch(e){} };
     acts.appendChild(sh);
   }
-  const a=document.createElement('a'); a.className= (acts.children.length? 'm-secondary':'m-primary'); a.href=collageURL; a.download='B-Collage.png';
-  a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 9l4 4 4-4M5 21h14"/></svg> Download collage';
-  acts.appendChild(a);
+
+  const dlIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 9l4 4 4-4M5 21h14"/></svg> ';
+  if(state.exportEach && photoCount){
+    // download everything (collage + each photo) as separate files
+    const dall=document.createElement('button'); dall_cls(dall, acts);
+    dall.innerHTML = dlIcon + `Download all (${allItems.length})`;
+    dall.onclick = ()=>downloadAll(allItems);
+    acts.appendChild(dall);
+    // download just the individual photos
+    const dph=document.createElement('button'); dph.className='m-secondary';
+    dph.innerHTML = dlIcon + `Download ${photoCount} photo${photoCount>1?'s':''} only`;
+    dph.onclick = ()=>downloadAll(photoItems);
+    acts.appendChild(dph);
+  } else {
+    const a=document.createElement('button'); a.className= (acts.children.length? 'm-secondary':'m-primary');
+    a.innerHTML = dlIcon + 'Download collage';
+    a.onclick = ()=>triggerDownload(collageBlob, 'B-Collage.png');
+    acts.appendChild(a);
+  }
 
   if(state.exportEach && photoCount){
-    $('#saveHint').innerHTML = `Collage <b>${W}×${H}px</b> + <b>${photoCount}</b> individual photo${photoCount>1?'s':''}. On iPhone: tap <b>Save / Share → Save ${shareFiles.length} Images</b>, or tap any thumbnail to save it on its own.`;
+    $('#saveHint').innerHTML = `Collage <b>${W}×${H}px</b> + <b>${photoCount}</b> individual photo${photoCount>1?'s':''}. On computer use <b>Download all</b> (your browser may ask to allow multiple downloads — choose Allow), or click any thumbnail. On iPhone use <b>Save / Share → Save ${shareFiles.length} Images</b>.`;
   } else {
-    $('#saveHint').innerHTML = `Exported at <b>${W}×${H}px</b>. On iPhone: tap <b>Save / Share → Save Image</b>, or long-press the preview above.`;
+    $('#saveHint').innerHTML = `Exported at <b>${W}×${H}px</b>. Click <b>Download collage</b>, or on iPhone <b>Save / Share → Save Image</b>.`;
   }
 }
+function dall_cls(btn, acts){ btn.className = acts.children.length ? 'm-secondary' : 'm-primary'; }
 
 /* ============================== INIT ============================== */
 function init(){
